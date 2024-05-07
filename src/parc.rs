@@ -2,65 +2,55 @@ use std::cell::{RefCell, RefMut};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ptr::NonNull;
-use std::sync::atomic::{self, AtomicUsize, Ordering};
+use std::sync::atomic::{self, Ordering};
 
-#[derive(Debug)]
-pub enum PotentiallyAtomicUsize {
-  Atomic(AtomicUsize),
-  NonAtomic(usize),
+use crate::potentially_atomic_usize::PotentiallyAtomicUsize;
+
+pub struct ParcInner<T> {
+  pub(crate) rc: RefCell<PotentiallyAtomicUsize>,
+  pub(crate) data: T,
 }
-impl PotentiallyAtomicUsize {
-  pub fn new_nonatomic(x: usize) -> Self {
-    Self::NonAtomic(x)
+
+impl<T> ParcInner<T> {
+  pub fn new(data: T) -> Self {
+    Self {
+      rc: PotentiallyAtomicUsize::new_nonatomic(1).into(),
+      data,
+    }
   }
-  pub fn new_atomic<T: Into<AtomicUsize>>(x: T) -> Self {
-    Self::Atomic(x.into())
+  pub fn rc(&mut self) -> usize {
+    self.rc.borrow_mut().copy_usize()
   }
-  pub fn copy_usize(&mut self) -> usize {
-    match self {
-      PotentiallyAtomicUsize::Atomic(atomic) => *atomic.get_mut(),
-      PotentiallyAtomicUsize::NonAtomic(nonatomic) => *nonatomic,
+  pub fn force_atomic(&mut self) {
+    if !self.is_atomic() {
+      self
+        .rc
+        .replace_with(|rc| PotentiallyAtomicUsize::new_atomic(rc.copy_usize()));
     }
   }
   pub fn is_atomic(&self) -> bool {
-    match self {
-      PotentiallyAtomicUsize::Atomic(_) => true,
-      PotentiallyAtomicUsize::NonAtomic(_) => false,
-    }
-  }
-}
-impl From<PotentiallyAtomicUsize> for AtomicUsize {
-  fn from(value: PotentiallyAtomicUsize) -> Self {
-    match value {
-      PotentiallyAtomicUsize::Atomic(x) => x,
-      PotentiallyAtomicUsize::NonAtomic(x) => x.into(),
-    }
+    self.rc.borrow().is_atomic()
   }
 }
 
 pub struct Parc<T> {
-  ptr: NonNull<ParcInner<T>>,
+  pub(crate) inner: NonNull<ParcInner<T>>,
   phantom: PhantomData<ParcInner<T>>,
 }
 
-pub struct ParcInner<T> {
-  rc: RefCell<PotentiallyAtomicUsize>,
-  data: T,
-}
-
 impl<T> Parc<T> {
-  pub fn new(data: T) -> Parc<T> {
-    let boxed = Box::new(ParcInner {
-      rc: PotentiallyAtomicUsize::new_nonatomic(1).into(),
-      data,
-    });
-    Parc {
-      ptr: NonNull::new(Box::into_raw(boxed)).unwrap(),
+  pub fn new(data: T) -> Self {
+    let boxed = Box::new(ParcInner::new(data));
+    Self {
+      inner: NonNull::new(Box::into_raw(boxed)).unwrap(),
       phantom: PhantomData,
     }
   }
   pub fn rc(&mut self) -> usize {
-    unsafe { self.ptr.as_mut() }.rc.get_mut().copy_usize()
+    unsafe { self.inner.as_mut() }.rc()
+  }
+  pub fn is_atomic(&mut self) -> bool {
+    unsafe { self.inner.as_ref() }.is_atomic()
   }
 }
 
@@ -68,14 +58,14 @@ impl<T> Deref for Parc<T> {
   type Target = T;
 
   fn deref(&self) -> &T {
-    let inner = unsafe { self.ptr.as_ref() };
+    let inner = unsafe { self.inner.as_ref() };
     &inner.data
   }
 }
 
 impl<T> Clone for Parc<T> {
-  fn clone(&self) -> Parc<T> {
-    let inner = unsafe { self.ptr.as_ref() };
+  fn clone(&self) -> Self {
+    let inner = unsafe { self.inner.as_ref() };
     RefMut::map(inner.rc.borrow_mut(), |parc| {
       match parc {
         PotentiallyAtomicUsize::Atomic(arc) => {
@@ -94,7 +84,7 @@ impl<T> Clone for Parc<T> {
       parc
     });
     Self {
-      ptr: self.ptr,
+      inner: self.inner,
       phantom: PhantomData,
     }
   }
@@ -102,7 +92,7 @@ impl<T> Clone for Parc<T> {
 
 impl<T> Drop for Parc<T> {
   fn drop(&mut self) {
-    let inner = unsafe { self.ptr.as_mut() };
+    let inner = unsafe { self.inner.as_mut() };
     match inner.rc.get_mut() {
       PotentiallyAtomicUsize::Atomic(rc) => {
         if rc.fetch_sub(1, Ordering::Release) != 1 {
