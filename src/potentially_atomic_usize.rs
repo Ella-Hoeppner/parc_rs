@@ -1,35 +1,35 @@
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::AtomicU32;
 
 #[derive(Debug)]
-pub enum PotentiallyAtomicUsize {
-  Atomic(AtomicUsize),
-  NonAtomic(usize),
+pub enum PotentiallyAtomicCounter {
+  Atomic(AtomicU32),
+  NonAtomic(u32),
 }
-impl PotentiallyAtomicUsize {
-  pub fn new_nonatomic(x: usize) -> Self {
+impl PotentiallyAtomicCounter {
+  pub fn new_nonatomic(x: u32) -> Self {
     Self::NonAtomic(x)
   }
-  pub fn new_atomic<T: Into<AtomicUsize>>(x: T) -> Self {
+  pub fn new_atomic<T: Into<AtomicU32>>(x: T) -> Self {
     Self::Atomic(x.into())
   }
-  pub fn copy_usize(&mut self) -> usize {
+  pub fn copy_u32(&mut self) -> u32 {
     match self {
-      PotentiallyAtomicUsize::Atomic(atomic) => *atomic.get_mut(),
-      PotentiallyAtomicUsize::NonAtomic(nonatomic) => *nonatomic,
+      PotentiallyAtomicCounter::Atomic(atomic) => *atomic.get_mut(),
+      PotentiallyAtomicCounter::NonAtomic(nonatomic) => *nonatomic,
     }
   }
   pub fn is_atomic(&self) -> bool {
     match self {
-      PotentiallyAtomicUsize::Atomic(_) => true,
-      PotentiallyAtomicUsize::NonAtomic(_) => false,
+      PotentiallyAtomicCounter::Atomic(_) => true,
+      PotentiallyAtomicCounter::NonAtomic(_) => false,
     }
   }
 }
-impl From<PotentiallyAtomicUsize> for AtomicUsize {
-  fn from(value: PotentiallyAtomicUsize) -> Self {
+impl From<PotentiallyAtomicCounter> for AtomicU32 {
+  fn from(value: PotentiallyAtomicCounter) -> Self {
     match value {
-      PotentiallyAtomicUsize::Atomic(x) => x,
-      PotentiallyAtomicUsize::NonAtomic(x) => x.into(),
+      PotentiallyAtomicCounter::Atomic(x) => x,
+      PotentiallyAtomicCounter::NonAtomic(x) => x.into(),
     }
   }
 }

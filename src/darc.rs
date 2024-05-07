@@ -5,15 +5,16 @@ use std::ptr::NonNull;
 use std::sync::atomic::{self, Ordering};
 
 use crate::parc::{Parc, ParcInner};
-use crate::potentially_atomic_usize::PotentiallyAtomicUsize;
+use crate::potentially_atomic_usize::PotentiallyAtomicCounter;
 
+// Definitely Atomic Reference Counter
 pub struct Darc<T> {
-  inner: NonNull<ParcInner<T>>,
+  pub(crate) inner: NonNull<ParcInner<T>>,
   phantom: PhantomData<ParcInner<T>>,
 }
 
 impl<T> Darc<T> {
-  pub fn rc(&mut self) -> usize {
+  pub fn rc(&mut self) -> u32 {
     unsafe { self.inner.as_mut() }.rc()
   }
 }
@@ -32,13 +33,13 @@ impl<T> Clone for Darc<T> {
     let inner = unsafe { self.inner.as_ref() };
     RefMut::map(inner.rc.borrow_mut(), |darc| {
       match darc {
-        PotentiallyAtomicUsize::Atomic(arc) => {
+        PotentiallyAtomicCounter::Atomic(arc) => {
           let old_rc = arc.fetch_add(1, Ordering::Relaxed);
-          if old_rc >= isize::MAX as usize {
+          if old_rc >= i32::MAX as u32 {
             std::process::abort();
           }
         }
-        PotentiallyAtomicUsize::NonAtomic(_) => {
+        PotentiallyAtomicCounter::NonAtomic(_) => {
           unreachable!()
         }
       }
@@ -58,14 +59,14 @@ impl<T> Drop for Darc<T> {
   fn drop(&mut self) {
     let inner = unsafe { self.inner.as_mut() };
     match inner.rc.get_mut() {
-      PotentiallyAtomicUsize::Atomic(rc) => {
+      PotentiallyAtomicCounter::Atomic(rc) => {
         if rc.fetch_sub(1, Ordering::Release) != 1 {
           return;
         }
         atomic::fence(Ordering::Acquire);
         drop(unsafe { Box::from_raw(inner) });
       }
-      PotentiallyAtomicUsize::NonAtomic(_) => {
+      PotentiallyAtomicCounter::NonAtomic(_) => {
         unreachable!()
       }
     }
