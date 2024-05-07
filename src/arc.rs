@@ -24,7 +24,7 @@ impl<T> Arc<T> {
       phantom: PhantomData,
     }
   }
-  pub fn rc(&self) -> &AtomicUsize {
+  pub fn rc(&mut self) -> &AtomicUsize {
     &(unsafe { self.ptr.as_ref() }).rc
   }
 }
