@@ -60,4 +60,28 @@ mod test {
     handle.join().unwrap();
     assert_eq!(parc.rc(), 1);
   }
+
+  #[test]
+  fn make_non_atomic() {
+    let mut parc = Parc::new("test");
+    assert!(!parc.is_atomic());
+    let mut parc = Parc::from(Darc::from(parc));
+    assert!(parc.is_atomic());
+    parc.attempt_make_non_atomic();
+    assert!(!parc.is_atomic());
+  }
+
+  #[test]
+  fn make_non_atomic_fail() {
+    let mut parc = Parc::new("test");
+    assert!(!parc.is_atomic());
+    {
+      let _darc = Darc::from(parc.clone());
+      assert!(parc.is_atomic());
+      parc.attempt_make_non_atomic();
+      assert!(parc.is_atomic());
+    }
+    parc.attempt_make_non_atomic();
+    assert!(!parc.is_atomic());
+  }
 }

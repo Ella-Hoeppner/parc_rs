@@ -32,6 +32,21 @@ impl<T> ParcInner<T> {
   pub fn is_atomic(&self) -> bool {
     self.rc.borrow().is_atomic()
   }
+  pub fn attempt_make_non_atomic(&mut self) {
+    self.rc.replace_with(|parc| match parc {
+      PotentiallyAtomicCounter::Atomic(arc) => {
+        let rc = *arc.get_mut();
+        if rc == 1 {
+          PotentiallyAtomicCounter::NonAtomic(rc)
+        } else {
+          PotentiallyAtomicCounter::Atomic(rc.into())
+        }
+      }
+      PotentiallyAtomicCounter::NonAtomic(rc) => {
+        PotentiallyAtomicCounter::NonAtomic(*rc)
+      }
+    });
+  }
 }
 
 // Potentially Atomic Reference Counter
@@ -53,6 +68,9 @@ impl<T> Parc<T> {
   }
   pub fn is_atomic(&mut self) -> bool {
     unsafe { self.inner.as_ref() }.is_atomic()
+  }
+  pub fn attempt_make_non_atomic(&mut self) {
+    unsafe { self.inner.as_mut() }.attempt_make_non_atomic()
   }
 }
 
