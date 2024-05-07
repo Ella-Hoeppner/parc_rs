@@ -1,4 +1,3 @@
-mod arc;
 pub mod darc;
 pub mod parc;
 pub mod potentially_atomic_usize;

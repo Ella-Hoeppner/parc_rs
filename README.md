@@ -1,0 +1,13 @@
+# Parc
+
+A ***P***otentially ***A***tomic ***R***eference-***C***ounting pointer for rust.
+
+The main purpose of this project is the `Parc` struct, a reference-counting pointer that is *potentially* atomic. While an `Rc` counts references with a non-atomic unsigned int, and an `Arc` counts references with an atomic unsigned int, a `Parc` can use either an atomic or non-atomic unsigned int to count references, depending on the context. The intention is that `Parc` can use a cheap, non-atomic counter when operating on a single thread, but switch to an atomic counter (in a type-safe way) as soon as it needs to be shared between threads.
+
+The `Parc` type doesn't impl `Send` or `Sync`, but the `Darc` type - a ***D***efinitely ***A***tomic ***R***eference-***C***ounting pointer - does. `Parc` and `Darc` can each be made `into()` one another, and when you create a `Darc` via `Darc::from<Parc>()` (the only way to create a `Darc`), the internal reference counter will be switched from non-atomic to atomic (if it isn't already atomic). This reference counter is shared with all other clones of the original `Parc`, meaning that every other clone will also now be atomically reference-counted.
+
+In other words, you can make as many copies of a `Parc` as you want on a single thread, and they'll behave just like `Rc`s, with none of the overhead associated with atomics. But as soon as you send one of the `Parc`s to another thread (by first converting it to a `Darc` (and then back to a `Parc` in the other thread, if you like)), all the copies will behave from then on like `Arc`s. If later on you are no longer sharing the data in the `Parc` between multiple threads, you can call `Parc::attempt_make_non_atomic()` to attempt to make it switch back to using a non-atomic counter, to boost performance (though this will only work if the reference count is exactly one, as otherwise there is no way to verify that the multiple copies are not on separate threads).
+
+### Status
+
+This code was made as a quick proof-of-concept experiment, and while it seems to work in the little testing I've done, it uses a significant amount of `unsafe` code, and I haven't tested it enough to be sure that it doesn't leak memory or that it's truly threadsafe. The `Parc` type also doesn't implement many of the functions that `Rc` or `Arc` do (and has no concept of `Weak` references), and could certainly not be used as a drop-in replacement. I might elaborate on this project at some point, but for now this code should definitely not be used for anything.
